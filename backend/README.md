@@ -191,13 +191,13 @@ npm.cmd run dev
 Backend URL:
 
 ```text
-http://localhost:5000
+http://construction-backend-7yhd.onrender.com
 ```
 
 Health check:
 
 ```text
-http://localhost:5000/health
+http:/construction-backend-7yhd.onrender.com/health
 ```
 
 ## Step 10 - Run Frontend
@@ -207,7 +207,7 @@ Open `b2c_fixed2.html` in your browser.
 The frontend already calls:
 
 ```text
-http://localhost:5000/api
+http://construction-backend-7yhd.onrender.com/api
 ```
 
 Recommended VS Code workflow:

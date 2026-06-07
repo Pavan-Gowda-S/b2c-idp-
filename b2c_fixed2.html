@@ -3118,8 +3118,7 @@
   // ===== Backend API Bridge =====
   // The original page renders from browser storage. This bridge keeps that UI intact
   // while syncing every important action with the Express/Supabase backend.
-  const B2C_API_BASE = localStorage.getItem('b2c_api_base') || 'http://localhost:5000/api';
-  const b2cSession = {
+  const B2C_API_BASE = localStorage.getItem('b2c_api_base') || 'https://construction-backend-7yhd.onrender.com/api';
     get builderToken(){ return localStorage.getItem('b2c_builder_token') || ''; },
     set builderToken(v){ localStorage.setItem('b2c_builder_token', v); },
     get customerToken(){ return localStorage.getItem('b2c_customer_token') || ''; },
