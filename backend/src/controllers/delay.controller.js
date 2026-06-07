@@ -1,10 +1,12 @@
 const { body, param } = require('express-validator');
-const DelayReport = require('../models/DelayReport');
+const store = require('../services/supabase.service');
+const collections = require('../supabase/tables');
 const AppError = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
 const { ok, created } = require('../utils/apiResponse');
 const projectService = require('../services/project.service');
 const { logActivity } = require('../services/activity.service');
+const { createNotification } = require('../services/notification.service');
 const { CONSTRUCTION_DOMAINS } = require('../utils/domains');
 
 exports.validation = [
@@ -17,7 +19,7 @@ exports.validation = [
 exports.create = asyncHandler(async (req, res) => {
   const project = await projectService.getProjectByCode(req.params.code);
   if (!project || !projectService.assertProjectAccess(project, req)) throw new AppError('Project not found', 404);
-  const delay = await DelayReport.create({
+  const delay = await store.create(collections.delays, {
     project: project._id,
     builder: req.user._id,
     domain: req.body.domain,
@@ -25,12 +27,22 @@ exports.create = asyncHandler(async (req, res) => {
     reason: req.body.reason
   });
   await logActivity({ project: project._id, actor: req.user._id, actorModel: 'Builder', type: 'Delay', message: `Delay reported for ${req.body.domain}: ${req.body.reason}` });
+  await createNotification({
+    recipient: project.customer,
+    recipientModel: 'Customer',
+    project: project._id,
+    title: 'Delay alert',
+    message: `${req.body.domain}: ${req.body.reason}`,
+    type: 'delay'
+  });
   created(res, { delay }, 'Delay report created');
 });
 
 exports.list = asyncHandler(async (req, res) => {
   const project = await projectService.getProjectByCode(req.params.code);
   if (!project || !projectService.assertProjectAccess(project, req)) throw new AppError('Project not found', 404);
-  const delays = await DelayReport.find({ project: project._id }).sort({ date: -1 });
+  const delays = await store.list(collections.delays, [['project', '==', project._id]]);
+  delays.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
   ok(res, { delays }, 'Delay reports loaded');
 });
+

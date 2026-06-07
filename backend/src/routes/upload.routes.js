@@ -11,3 +11,4 @@ router.post('/:code/bills', authorize('builder'), upload.array('files', 12), con
 router.post('/:code/documents', authorize('builder'), upload.array('files', 5), controller.codeParam, validate, controller.uploadDocuments);
 
 module.exports = router;
+

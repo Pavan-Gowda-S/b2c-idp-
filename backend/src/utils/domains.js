@@ -7,3 +7,4 @@ exports.CONSTRUCTION_DOMAINS = [
   'Plastering & Flooring',
   'Painting & Interior'
 ];
+

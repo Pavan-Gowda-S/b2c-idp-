@@ -6,3 +6,4 @@ module.exports = (req, res, next) => {
   if (result.isEmpty()) return next();
   return next(new AppError('Validation failed', 422, result.array()));
 };
+

@@ -9,3 +9,4 @@ router.get('/:code', controller.list);
 router.post('/:code', authorize('builder'), upload.array('images', 12), controller.validation, validate, controller.create);
 
 module.exports = router;
+

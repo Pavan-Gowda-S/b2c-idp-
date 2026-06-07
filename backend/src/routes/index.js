@@ -8,8 +8,10 @@ router.use('/uploads', require('./upload.routes'));
 router.use('/feedback', require('./feedback.routes'));
 router.use('/notifications', require('./notification.routes'));
 router.use('/tasks', require('./task.routes'));
+router.use('/schedules', require('./schedule.routes'));
 router.use('/approvals', require('./approval.routes'));
 router.use('/delays', require('./delay.routes'));
 router.use('/ai', require('./ai.routes'));
 
 module.exports = router;
+

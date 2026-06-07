@@ -3117,7 +3117,7 @@
 <script>
   // ===== Backend API Bridge =====
   // The original page renders from browser storage. This bridge keeps that UI intact
-  // while syncing every important action with the Express/MongoDB backend.
+  // while syncing every important action with the Express/Supabase backend.
   const B2C_API_BASE = localStorage.getItem('b2c_api_base') || 'http://localhost:5000/api';
   const b2cSession = {
     get builderToken(){ return localStorage.getItem('b2c_builder_token') || ''; },
@@ -3190,7 +3190,7 @@
         domain: f.domain,
         date: toLocalDate(f.createdAt),
         desc: f.description || f.originalName,
-        files: [{ name: f.originalName, data: f.url, fileType: f.mimeType }],
+        files: [{ name: f.originalName, data: f.url, type: f.mimeType, fileType: f.mimeType, isPDF: f.mimeType === 'application/pdf' }],
         uploadedAt: new Date(f.createdAt).toLocaleString()
       }))));
 
@@ -3210,13 +3210,14 @@
         comment: a.customerComment || '',
         date: toLocalDate(a.createdAt),
         uploadedAt: new Date(a.createdAt).toLocaleString(),
-        files: (a.files || []).map(f => ({ name: f.originalName, data: f.url, fileType: f.mimeType, isPDF: f.mimeType === 'application/pdf' }))
+        files: (a.files || []).map(f => ({ name: f.originalName, data: f.url, type: f.mimeType, fileType: f.mimeType, isPDF: f.mimeType === 'application/pdf' }))
       }))));
 
       localStorage.setItem(docLibKey(code), JSON.stringify((docs.files || []).map(f => ({
         name: f.description || f.originalName,
         category: f.domain || 'Other',
         data: f.url,
+        type: f.mimeType,
         fileType: f.mimeType,
         isPDF: f.mimeType === 'application/pdf',
         date: toLocalDate(f.createdAt),
@@ -3238,6 +3239,34 @@
       }))));
     } catch(err) {
       console.warn('Backend sync failed:', err.message);
+    }
+  }
+
+  async function renderBuilderProjectsList(){
+    const list = $('builderProjectsList');
+    if(!list) return;
+    try {
+      const data = await apiRequest('/projects');
+      const projects = data.projects || [];
+      if(!projects.length){
+        list.innerHTML = "<div class='note-muted'>No projects opened yet. Enter a 10-digit project code to create one.</div>";
+        return;
+      }
+      list.innerHTML = '';
+      projects.forEach(project => {
+        const code = project.code || '';
+        const card = document.createElement('div');
+        card.className = 'stat-card';
+        card.innerHTML = `
+          <h3>${escapeHtml(code)}</h3>
+          <p>${escapeHtml(project.title || 'Construction Project')}</p>
+          <small>${Number(project.completionPercentage || 0)}% complete</small><br>
+          <button class="btn btn-primary btn-sm" onclick="builderQuickOpen('${escapeHtml(code)}')" style="margin-top:8px;">Open</button>
+        `;
+        list.appendChild(card);
+      });
+    } catch(err) {
+      list.innerHTML = "<div class='note-muted'>Login as builder to load projects from Supabase.</div>";
     }
   }
 
@@ -3287,6 +3316,7 @@
       $('builderProjectCodeDisplay').textContent = code;
       await syncProjectToLocal(code, 'builder');
       renderBuilderSuggestions();
+      await renderBuilderProjectsList();
       msg.style.color = 'var(--success)';
       msg.textContent = 'Project opened from backend.';
       scrollToEl($('builderProjectArea'));

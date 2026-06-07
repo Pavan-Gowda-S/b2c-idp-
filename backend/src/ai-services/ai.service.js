@@ -1,7 +1,8 @@
-const AIReport = require('../models/AIReport');
+const store = require('../services/supabase.service');
+const collections = require('../supabase/tables');
 
 async function createQueuedReport(project, type, payload = {}) {
-  const report = await AIReport.create({
+  const report = await store.create(collections.aiReports, {
     project,
     sourceFile: payload.sourceFile,
     type,
@@ -42,3 +43,4 @@ exports.chatbotReply = async (project, message) => ({
   reply: `I received your question: "${message}". The chatbot endpoint is ready; connect an LLM provider here for live project-aware answers.`,
   readyForIntegration: true
 });
+

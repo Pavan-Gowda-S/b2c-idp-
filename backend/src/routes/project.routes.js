@@ -11,3 +11,4 @@ router.get('/:code/dashboard', controller.codeParam, validate, controller.dashbo
 router.get('/:code/activity', controller.codeParam, validate, controller.activity);
 
 module.exports = router;
+

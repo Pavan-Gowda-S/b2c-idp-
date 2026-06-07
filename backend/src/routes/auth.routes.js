@@ -9,3 +9,4 @@ router.post('/customer/login', controller.customerLoginValidation, validate, con
 router.get('/me', authenticate, controller.me);
 
 module.exports = router;
+

@@ -1,7 +1,7 @@
 const { body } = require('express-validator');
-const Builder = require('../models/Builder');
-const Customer = require('../models/Customer');
-const Project = require('../models/Project');
+const bcrypt = require('bcryptjs');
+const store = require('../services/supabase.service');
+const collections = require('../supabase/tables');
 const AppError = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
 const { ok, created } = require('../utils/apiResponse');
@@ -32,38 +32,48 @@ exports.customerLoginValidation = [
 ];
 
 exports.registerBuilder = asyncHandler(async (req, res) => {
-  const exists = await Builder.findOne({ username: req.body.username.toLowerCase() });
+  const exists = await store.findOne(collections.builders, 'username', '==', req.body.username.toLowerCase());
   if (exists) throw new AppError('Username already exists', 409);
-  const builder = new Builder({
+  const builder = await store.create(collections.builders, {
     name: req.body.name,
-    username: req.body.username,
+    username: req.body.username.toLowerCase(),
     email: req.body.email,
     phone: req.body.phone,
-    companyName: req.body.companyName
+    companyName: req.body.companyName,
+    passwordHash: await bcrypt.hash(req.body.password, 12),
+    isActive: true
   });
-  builder.password = req.body.password;
-  await builder.save();
+  await store.create(collections.users, {
+    role: 'builder',
+    refId: builder._id,
+    name: builder.name,
+    username: builder.username,
+    email: builder.email || '',
+    phone: builder.phone || ''
+  });
   const payload = builderPayload(builder);
   created(res, { token: signToken(payload), user: payload }, 'Builder registered');
 });
 
 exports.loginBuilder = asyncHandler(async (req, res) => {
-  const builder = await Builder.findOne({ username: req.body.username.toLowerCase() }).select('+passwordHash');
+  const builder = await store.findOne(collections.builders, 'username', '==', req.body.username.toLowerCase());
   if (!builder) throw new AppError('Invalid builder credentials', 401);
-  const valid = await builder.comparePassword(req.body.password);
+  const valid = await bcrypt.compare(req.body.password, builder.passwordHash);
   if (!valid) throw new AppError('Invalid builder credentials', 401);
   const payload = builderPayload(builder);
   ok(res, { token: signToken(payload), user: payload }, 'Builder login successful');
 });
 
 exports.loginCustomer = asyncHandler(async (req, res) => {
-  const customer = await Customer.findOne({ projectCode: req.body.projectCode });
+  const customer = await store.findOne(collections.customers, 'projectCode', '==', req.body.projectCode);
   if (!customer) throw new AppError('Project code not found', 404);
-  const project = await Project.findOne({ code: req.body.projectCode, customer: customer._id });
+  const project = await store.findOne(collections.projects, 'code', '==', req.body.projectCode);
   const payload = { id: customer._id, role: 'customer', projectCode: customer.projectCode, name: customer.name };
   ok(res, { token: signToken(payload), user: payload, project }, 'Customer login successful');
 });
 
 exports.me = asyncHandler(async (req, res) => {
-  ok(res, { role: req.userRole, user: req.user }, 'Profile loaded');
+  const { passwordHash, ...safeUser } = req.user;
+  ok(res, { role: req.userRole, user: safeUser }, 'Profile loaded');
 });
+

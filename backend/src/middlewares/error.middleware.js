@@ -14,3 +14,4 @@ exports.errorHandler = (err, req, res, next) => {
   if (process.env.NODE_ENV !== 'production') payload.stack = err.stack;
   res.status(status).json(payload);
 };
+

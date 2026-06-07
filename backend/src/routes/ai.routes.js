@@ -11,3 +11,4 @@ router.post('/:code/material-prediction', controller.codeParam, validate, contro
 router.post('/:code/chatbot', controller.codeParam, validate, controller.chatbot);
 
 module.exports = router;
+

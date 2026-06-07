@@ -1,5 +1,6 @@
 const { body, param } = require('express-validator');
-const Estimation = require('../models/Estimation');
+const store = require('../services/supabase.service');
+const collections = require('../supabase/tables');
 const AppError = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
 const { ok, created } = require('../utils/apiResponse');
@@ -17,7 +18,7 @@ exports.validation = [
 exports.create = asyncHandler(async (req, res) => {
   const project = await projectService.getProjectByCode(req.params.code);
   if (!project || !projectService.assertProjectAccess(project, req)) throw new AppError('Project not found', 404);
-  const estimation = await Estimation.create({
+  const estimation = await store.create(collections.estimations, {
     project: project._id,
     builder: req.user._id,
     domain: req.body.domain,
@@ -31,6 +32,8 @@ exports.create = asyncHandler(async (req, res) => {
 exports.list = asyncHandler(async (req, res) => {
   const project = await projectService.getProjectByCode(req.params.code);
   if (!project || !projectService.assertProjectAccess(project, req)) throw new AppError('Project not found', 404);
-  const estimations = await Estimation.find({ project: project._id }).sort({ createdAt: -1 });
+  const estimations = await store.list(collections.estimations, [['project', '==', project._id]]);
+  estimations.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
   ok(res, { estimations }, 'Estimations loaded');
 });
+
