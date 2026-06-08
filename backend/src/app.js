@@ -26,7 +26,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 500 }));
 
-app.use('/uploads', express.static(path.join(__dirname, '..', env.uploadDir)));
+// All user files are stored in Supabase Storage. Keep the backend stateless.
 app.use('/api', routes);
 
 app.get('/health', (req, res) => {

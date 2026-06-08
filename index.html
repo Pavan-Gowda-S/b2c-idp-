@@ -1458,6 +1458,58 @@
   const docLibKey     = code => "b2c_doclibrary_"    + code;
   const delaysKey     = code => "b2c_delays_"        + code;
 
+  // =====================================================================================
+  // Cloud-first storage policy:
+  // - Project data must NOT persist in localStorage (breaks cross-device sync).
+  // - Only auth tokens + lightweight session hints may use localStorage.
+  //
+  // To avoid a risky full rewrite of this single-file SPA, we intercept localStorage
+  // reads/writes for project-data keys and keep them in an in-memory cache instead.
+  // The source of truth becomes the backend (Express → Supabase). The cache is re-hydrated
+  // via syncProjectToLocal() after login/open and on session restore.
+  // =====================================================================================
+  const B2C_PROJECT_KEY_PREFIXES = [
+    'b2c_updates_',
+    'b2c_est_',
+    'b2c_3d_',
+    'b2c_suggestions_',
+    'b2c_history_',
+    'b2c_bills_',
+    'b2c_approvals_',
+    'b2c_doclibrary_',
+    'b2c_delays_'
+  ];
+  const _b2cProjectMem = new Map(); // key -> string value
+  const _b2cIsProjectKey = (key) => {
+    const k = String(key || '');
+    return B2C_PROJECT_KEY_PREFIXES.some((p) => k.startsWith(p));
+  };
+  (function installB2CProjectStorageShim(){
+    try {
+      const _getItem = Storage.prototype.getItem;
+      const _setItem = Storage.prototype.setItem;
+      const _removeItem = Storage.prototype.removeItem;
+      Storage.prototype.getItem = function(key){
+        if (this === window.localStorage && _b2cIsProjectKey(key)) return _b2cProjectMem.get(String(key)) ?? null;
+        return _getItem.call(this, key);
+      };
+      Storage.prototype.setItem = function(key, value){
+        if (this === window.localStorage && _b2cIsProjectKey(key)) { _b2cProjectMem.set(String(key), String(value)); return; }
+        return _setItem.call(this, key, value);
+      };
+      Storage.prototype.removeItem = function(key){
+        if (this === window.localStorage && _b2cIsProjectKey(key)) { _b2cProjectMem.delete(String(key)); return; }
+        return _removeItem.call(this, key);
+      };
+    } catch(e) {
+      console.warn('Project storage shim could not be installed:', e);
+    }
+  })();
+
+  // Session hints (allowed in localStorage)
+  const B2C_LAST_CUSTOMER_CODE_KEY = 'b2c_last_customer_code';
+  const B2C_LAST_BUILDER_PROJECT_KEY = 'b2c_last_builder_project';
+
   let currentCustomerCode  = null;
   let builderLoggedIn      = false;
   let currentBuilderProject= null;
@@ -1539,11 +1591,13 @@
   // ===== RESET =====
   function resetCustomerState(){
     currentCustomerCode = null;
+    try { localStorage.removeItem(B2C_LAST_CUSTOMER_CODE_KEY); } catch(e){}
     $('customer-portal').style.display = 'none';
     $('customer-dashboard').style.display = 'none';
   }
   function resetBuilderState(){
     builderLoggedIn = false; currentBuilderProject = null;
+    try { localStorage.removeItem(B2C_LAST_BUILDER_PROJECT_KEY); } catch(e){}
     $('builder-portal').style.display = 'none';
     $('builderDashboard').style.display = 'none';
     $('builderProjectArea').style.display = 'none';
@@ -3119,6 +3173,7 @@
   // The original page renders from browser storage. This bridge keeps that UI intact
   // while syncing every important action with the Express/Supabase backend.
   const B2C_API_BASE = localStorage.getItem('b2c_api_base') || 'https://construction-backend-7yhd.onrender.com/api';
+  const b2cSession = {
     get builderToken(){ return localStorage.getItem('b2c_builder_token') || ''; },
     set builderToken(v){ localStorage.setItem('b2c_builder_token', v); },
     get customerToken(){ return localStorage.getItem('b2c_customer_token') || ''; },
@@ -3238,8 +3293,55 @@
       }))));
     } catch(err) {
       console.warn('Backend sync failed:', err.message);
+      try { showNotification('Could not sync from server: ' + err.message, 4500); } catch(e){}
     }
   }
+
+  async function restoreSessionFromBackend(){
+    // Customer session restore
+    try {
+      const code = localStorage.getItem(B2C_LAST_CUSTOMER_CODE_KEY) || '';
+      if(code && /^\d{10}$/.test(code) && b2cSession.customerToken){
+        currentCustomerCode = code;
+        $('customer-dashboard').style.display = 'block';
+        $('custCodeDisplay').textContent = code;
+        await syncProjectToLocal(code, 'customer');
+        showCustomerTab('updates');
+        renderStatsDashboard();
+        renderUpdatesForCode(code);
+        renderCustomerEstimation();
+        renderCustomer3D();
+        renderPhases();
+        renderMilestoneTimeline();
+        renderSmartAlerts();
+        renderQuickFilters();
+      }
+    } catch(e) {}
+
+    // Builder session restore (login + last opened project)
+    try {
+      const code = localStorage.getItem(B2C_LAST_BUILDER_PROJECT_KEY) || '';
+      if(code && /^\d{10}$/.test(code) && b2cSession.builderToken){
+        builderLoggedIn = true;
+        currentBuilderProject = code;
+        $('builderDashboard').style.display = 'block';
+        $('builderProjectArea').style.display = 'block';
+        $('builderProjectCodeDisplay').textContent = code;
+        await syncProjectToLocal(code, 'builder');
+        renderBuilderSuggestions();
+        await renderBuilderProjectsList();
+      } else if(b2cSession.builderToken) {
+        // Token exists, but no opened project yet
+        builderLoggedIn = true;
+        $('builderDashboard').style.display = 'block';
+        await renderBuilderProjectsList();
+      }
+    } catch(e) {}
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    restoreSessionFromBackend();
+  });
 
   async function renderBuilderProjectsList(){
     const list = $('builderProjectsList');
@@ -3290,6 +3392,7 @@
       $('builderNameDisplay').textContent = data.user.name || name;
       $('builderProjectArea').style.display = 'none';
       currentBuilderProject = null;
+      try { localStorage.removeItem(B2C_LAST_BUILDER_PROJECT_KEY); } catch(e){}
       renderBuilderProjectsList();
       scrollToEl($('builderDashboard'));
       showNotification('Builder backend login complete.');
@@ -3311,6 +3414,7 @@
         await apiRequest('/projects', { method:'POST', body:JSON.stringify({ code, title:'Construction Project', customerName:'Customer ' + code }) });
       }
       currentBuilderProject = code;
+      try { localStorage.setItem(B2C_LAST_BUILDER_PROJECT_KEY, code); } catch(e){}
       $('builderProjectArea').style.display = 'block';
       $('builderProjectCodeDisplay').textContent = code;
       await syncProjectToLocal(code, 'builder');
@@ -3332,6 +3436,7 @@
       const data = await apiRequest('/auth/customer/login', { method:'POST', body:JSON.stringify({ projectCode:code }) }, 'customer');
       b2cSession.customerToken = data.token;
       currentCustomerCode = code;
+      try { localStorage.setItem(B2C_LAST_CUSTOMER_CODE_KEY, code); } catch(e){}
       $('custLoginMsg').style.color = 'var(--success)';
       $('custLoginMsg').textContent = 'Login successful. Opening your dashboard...';
       $('customer-dashboard').style.display = 'block';
@@ -3472,6 +3577,7 @@
     const date = $('suggestionDate').value;
     const status = $('suggestionStatus');
     try {
+      if(!currentCustomerCode){ status.textContent = 'Enter your project code first.'; return; }
       await apiRequest('/feedback/' + currentCustomerCode, { method:'POST', body:JSON.stringify({ message:msg, workDate:date }) }, 'customer');
       await syncProjectToLocal(currentCustomerCode, 'customer');
       status.style.color = 'var(--success)';
