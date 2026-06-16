@@ -91,12 +91,3 @@ exports.activity = asyncHandler(async (req, res) => {
   ok(res, { logs }, 'Activity loaded');
 });
 
-exports.listCustomerProjects = asyncHandler(async (req, res) => {
-  const relations = await store.list(collections.userProjects, [['user_id', '==', req.user._id]]);
-  const projectIds = relations.map((relation) => relation.projectId);
-  if (!projectIds.length) return ok(res, { projects: [] }, 'Customer has no assigned projects');
-
-  const projects = await store.list(collections.projects, [['id', 'in', projectIds]]);
-  ok(res, { projects }, 'Customer projects loaded');
-});
-

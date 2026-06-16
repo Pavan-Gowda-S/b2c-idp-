@@ -10,10 +10,11 @@ exports.authenticate = async (req, res, next) => {
     const token = header.startsWith('Bearer ') ? header.slice(7) : null;
     if (!token) throw new AppError('Authentication token required', 401);
     const decoded = jwt.verify(token, env.jwtSecret);
-    const user = await store.getById(collections.users, decoded.id);
+    const collection = decoded.role === 'builder' ? collections.builders : collections.customers;
+    const user = await store.getById(collection, decoded.id);
     if (!user) throw new AppError('Authenticated user no longer exists', 401);
     req.user = user;
-    req.userRole = String(user.role || decoded.role || '').toUpperCase();
+    req.userRole = decoded.role;
     next();
   } catch (error) {
     next(error.statusCode ? error : new AppError('Invalid or expired token', 401));
@@ -21,10 +22,7 @@ exports.authenticate = async (req, res, next) => {
 };
 
 exports.authorize = (...roles) => (req, res, next) => {
-  const userRole = String(req.userRole || '').toUpperCase();
-  if (!roles.map((r) => String(r).toUpperCase()).includes(userRole)) {
-    return next(new AppError('Insufficient permissions', 403));
-  }
+  if (!roles.includes(req.userRole)) return next(new AppError('Insufficient permissions', 403));
   next();
 };
 

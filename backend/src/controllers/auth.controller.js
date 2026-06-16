@@ -1,94 +1,79 @@
 const { body } = require('express-validator');
-const authService = require('../services/auth.service');
+const bcrypt = require('bcryptjs');
+const store = require('../services/supabase.service');
+const collections = require('../supabase/tables');
 const AppError = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
 const { ok, created } = require('../utils/apiResponse');
 const { signToken } = require('../utils/token');
 
-const builderPayload = (user) => ({
-  id: user._id,
-  role: 'BUILDER',
-  name: user.name,
-  email: user.email,
-  phone_number: user.phone_number
-});
-
-const customerPayload = (user) => ({
-  id: user._id,
-  role: 'CUSTOMER',
-  name: user.name,
-  phone_number: user.phone_number
+const builderPayload = (builder) => ({
+  id: builder._id,
+  role: 'builder',
+  name: builder.name,
+  username: builder.username,
+  companyName: builder.companyName
 });
 
 exports.registerBuilderValidation = [
-  body('name').trim().notEmpty().withMessage('Name is required'),
-  body('email').trim().isEmail().withMessage('Valid email is required'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
-  body('phone_number').matches(/^\d{10}$/).withMessage('Valid 10-digit phone number is required')
+  body('name').trim().notEmpty(),
+  body('username').trim().isLength({ min: 3 }),
+  body('password').isLength({ min: 6 }),
+  body('email').optional({ checkFalsy: true }).isEmail()
 ];
 
 exports.loginBuilderValidation = [
-  body('identifier').trim().notEmpty().withMessage('Email or phone is required'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
-];
-
-exports.googleBuilderValidation = [
-  body('email').trim().isEmail().withMessage('Valid email is required'),
-  body('name').trim().notEmpty().withMessage('Name is required'),
-  body('google_id').trim().notEmpty().withMessage('Google ID is required')
+  body('username').trim().notEmpty(),
+  body('password').isLength({ min: 6 })
 ];
 
 exports.customerLoginValidation = [
-  body('phone_number').matches(/^\d{10}$/).withMessage('Valid 10-digit phone number is required')
-];
-
-exports.customerVerifyValidation = [
-  body('phone_number').matches(/^\d{10}$/).withMessage('Valid 10-digit phone number is required'),
-  body('otp').matches(/^\d{6}$/).withMessage('Valid 6-digit OTP is required')
+  body('projectCode').matches(/^\d{10}$/).withMessage('Valid 10-digit project code is required')
 ];
 
 exports.registerBuilder = asyncHandler(async (req, res) => {
-  const builder = await authService.createBuilder({
+  const exists = await store.findOne(collections.builders, 'username', '==', req.body.username.toLowerCase());
+  if (exists) throw new AppError('Username already exists', 409);
+  const builder = await store.create(collections.builders, {
     name: req.body.name,
+    username: req.body.username.toLowerCase(),
     email: req.body.email,
-    phone: req.body.phone_number,
-    password: req.body.password
+    phone: req.body.phone,
+    companyName: req.body.companyName,
+    passwordHash: await bcrypt.hash(req.body.password, 12),
+    isActive: true
+  });
+  await store.create(collections.users, {
+    role: 'builder',
+    refId: builder._id,
+    name: builder.name,
+    username: builder.username,
+    email: builder.email || '',
+    phone: builder.phone || ''
   });
   const payload = builderPayload(builder);
-  created(res, { token: signToken(payload), user: payload }, 'Builder registered successfully');
+  created(res, { token: signToken(payload), user: payload }, 'Builder registered');
 });
 
 exports.loginBuilder = asyncHandler(async (req, res) => {
-  const user = await authService.authenticateBuilder(req.body.identifier, req.body.password);
-  if (!user) throw new AppError('Invalid builder credentials', 401);
-  const payload = builderPayload(user);
+  const builder = await store.findOne(collections.builders, 'username', '==', req.body.username.toLowerCase());
+  if (!builder) throw new AppError('Invalid builder credentials', 401);
+  const valid = await bcrypt.compare(req.body.password, builder.passwordHash);
+  if (!valid) throw new AppError('Invalid builder credentials', 401);
+  const payload = builderPayload(builder);
   ok(res, { token: signToken(payload), user: payload }, 'Builder login successful');
 });
 
-exports.loginBuilderGoogle = asyncHandler(async (req, res) => {
-  const user = await authService.googleBuilderLogin({
-    email: req.body.email,
-    name: req.body.name,
-    googleId: req.body.google_id
-  });
-  const payload = builderPayload(user);
-  ok(res, { token: signToken(payload), user: payload }, 'Builder signed in with Google');
-});
-
-exports.sendCustomerOtp = asyncHandler(async (req, res) => {
-  const result = await authService.requestCustomerOtp(req.body.phone_number);
-  console.info(`Customer OTP for ${result.phone} is ${result.otp} (mocked)`);
-  ok(res, { message: 'OTP sent to the registered mobile number' }, 'Customer OTP dispatched');
-});
-
-exports.verifyCustomerOtp = asyncHandler(async (req, res) => {
-  const user = await authService.verifyCustomerOtp(req.body.phone_number, req.body.otp);
-  const payload = customerPayload(user);
-  ok(res, { token: signToken(payload), user: payload }, 'Customer verified');
+exports.loginCustomer = asyncHandler(async (req, res) => {
+  const customer = await store.findOne(collections.customers, 'projectCode', '==', req.body.projectCode);
+  if (!customer) throw new AppError('Project code not found', 404);
+  const project = await store.findOne(collections.projects, 'code', '==', req.body.projectCode);
+  const payload = { id: customer._id, role: 'customer', projectCode: customer.projectCode, name: customer.name };
+  ok(res, { token: signToken(payload), user: payload, project }, 'Customer login successful');
 });
 
 exports.me = asyncHandler(async (req, res) => {
-  const { passwordHash, password_hash, google_id, ...safeUser } = req.user;
+  const { passwordHash, ...safeUser } = req.user;
   ok(res, { role: req.userRole, user: safeUser }, 'Profile loaded');
 });
 

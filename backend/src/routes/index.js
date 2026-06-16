@@ -1,9 +1,6 @@
 const router = require('express').Router();
 
 router.use('/auth', require('./auth.routes'));
-router.use('/builder', require('./builder.routes'));
-router.use('/payments', require('./payments.routes'));
-router.use('/complaints', require('./complaints.routes'));
 router.use('/projects', require('./project.routes'));
 router.use('/progress', require('./progress.routes'));
 router.use('/estimations', require('./estimation.routes'));
