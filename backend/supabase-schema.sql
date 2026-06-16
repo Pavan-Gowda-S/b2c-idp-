@@ -36,15 +36,29 @@ create table if not exists customers (
 
 create table if not exists users (
   id uuid primary key default gen_random_uuid(),
-  role text not null check (role in ('builder', 'customer')),
-  ref_id uuid not null,
+  email text unique,
+  phone_number text unique,
+  role text not null check (role in ('builder','customer','BUILDER','CUSTOMER')),
   name text,
-  username text,
-  email text,
-  phone text,
+  password_hash text,
+  google_id text unique,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table if exists users
+  add column if not exists email text,
+  add column if not exists phone_number text,
+  add column if not exists role text check (role in ('builder','customer','BUILDER','CUSTOMER')),
+  add column if not exists name text,
+  add column if not exists password_hash text,
+  add column if not exists google_id text,
+  add column if not exists created_at timestamptz default now(),
+  add column if not exists updated_at timestamptz default now();
+
+create unique index if not exists idx_users_email on users(email);
+create unique index if not exists idx_users_phone_number on users(phone_number);
+create unique index if not exists idx_users_google_id on users(google_id);
 
 create table if not exists projects (
   id uuid primary key default gen_random_uuid(),
@@ -52,6 +66,7 @@ create table if not exists projects (
   title text not null default 'Construction Project',
   description text,
   builder uuid not null references builders(id) on delete cascade,
+  builder_id uuid references users(id) on delete cascade,
   customer uuid not null references customers(id) on delete cascade,
   address text,
   start_date text,
@@ -61,9 +76,15 @@ create table if not exists projects (
   domains jsonb not null default '[]'::jsonb,
   budget numeric not null default 0,
   spent_amount numeric not null default 0,
+  property_profile text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table if exists projects
+  add column if not exists builder_id uuid references users(id) on delete cascade,
+  add column if not exists property_profile text,
+  add column if not exists updated_at timestamptz default now();
 
 create table if not exists uploads (
   id uuid primary key default gen_random_uuid(),
@@ -82,6 +103,48 @@ create table if not exists uploads (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create table if not exists user_projects (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  project_id uuid not null references projects(id) on delete cascade,
+  assigned_role text not null check (assigned_role in ('OWNER','VIEWER')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, project_id)
+);
+
+create table if not exists complaints (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects(id) on delete cascade,
+  category text not null check (category in ('Structural','Plumbing','Electrical','Finishing')),
+  description text not null,
+  urgency text not null check (urgency in ('Critical','Major','Minor')),
+  status text not null default 'Submitted' check (status in ('Submitted','In Progress','Resolved_Pending','Closed')),
+  media_urls text[] not null default '{}',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists invoices (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects(id) on delete cascade,
+  milestone_name text not null,
+  base_amount numeric not null default 0,
+  cgst numeric not null default 0,
+  sgst numeric not null default 0,
+  total_amount_inr numeric not null default 0,
+  status text not null default 'Due Now' check (status in ('Paid','Due Now','Upcoming')),
+  invoice_url text,
+  due_date date,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_user_projects_user_id on user_projects(user_id);
+create index if not exists idx_user_projects_project_id on user_projects(project_id);
+create index if not exists idx_complaints_project_id on complaints(project_id);
+create index if not exists idx_invoices_project_id on invoices(project_id);
 
 create table if not exists progress_updates (
   id uuid primary key default gen_random_uuid(),
@@ -211,7 +274,12 @@ create table if not exists ai_reports (
 );
 
 create index if not exists idx_projects_builder on projects(builder);
+create index if not exists idx_projects_builder_id on projects(builder_id);
 create index if not exists idx_projects_customer on projects(customer);
+create index if not exists idx_user_projects_user_id on user_projects(user_id);
+create index if not exists idx_user_projects_project_id on user_projects(project_id);
+create index if not exists idx_complaints_project_id on complaints(project_id);
+create index if not exists idx_invoices_project_id on invoices(project_id);
 create index if not exists idx_uploads_project_category on uploads(project, category);
 create index if not exists idx_progress_project on progress_updates(project);
 create index if not exists idx_feedback_project on feedback(project);
@@ -229,6 +297,12 @@ drop trigger if exists users_set_updated_at on users;
 create trigger users_set_updated_at before update on users for each row execute function set_updated_at();
 drop trigger if exists projects_set_updated_at on projects;
 create trigger projects_set_updated_at before update on projects for each row execute function set_updated_at();
+drop trigger if exists user_projects_set_updated_at on user_projects;
+create trigger user_projects_set_updated_at before update on user_projects for each row execute function set_updated_at();
+drop trigger if exists complaints_set_updated_at on complaints;
+create trigger complaints_set_updated_at before update on complaints for each row execute function set_updated_at();
+drop trigger if exists invoices_set_updated_at on invoices;
+create trigger invoices_set_updated_at before update on invoices for each row execute function set_updated_at();
 drop trigger if exists uploads_set_updated_at on uploads;
 create trigger uploads_set_updated_at before update on uploads for each row execute function set_updated_at();
 drop trigger if exists progress_updates_set_updated_at on progress_updates;
